@@ -15,43 +15,96 @@ public enum SyncState: Sendable {
 /// Orchestrates bidirectional sync of CRDT operations.
 public actor SyncEngine {
     private let transport: any SyncTransport
+    private let operationLog: OperationLog
     private var lastSyncToken: SyncToken?
     private(set) public var state: SyncState = .idle
 
-    public init(transport: any SyncTransport) {
+    /// Maximum retry attempts for transient errors.
+    private static let maxRetries = 3
+
+    public init(transport: any SyncTransport, operationLog: OperationLog) {
         self.transport = transport
+        self.operationLog = operationLog
     }
 
     /// Push all unsynced local operations to the remote.
     public func push(operations: [Operation]) async throws {
-        // TODO: Implement for CG-011
-        // 1. Set state = .pushing
-        // 2. Batch operations into CKRecord arrays
-        // 3. Push via transport
-        // 4. Mark operations as synced in local DB
-        // 5. Set state = .idle
-        // Error handling: exponential backoff on transient errors
-        fatalError("Not yet implemented — implement for CG-011")
+        guard !operations.isEmpty else { return }
+
+        state = .pushing
+        do {
+            try await retryOnTransient {
+                try await self.transport.push(operations: operations)
+            }
+            try await operationLog.markSynced(operationIDs: operations.map(\.id))
+            state = .idle
+        } catch {
+            state = .error(asSyncError(error))
+            throw error
+        }
     }
 
     /// Pull remote operations since last sync token.
     public func pull() async throws -> [Operation] {
-        // TODO: Implement for CG-011
-        // 1. Set state = .pulling
-        // 2. Fetch via transport with lastSyncToken
-        // 3. Update lastSyncToken
-        // 4. Return new operations (caller will append to local log + re-materialize)
-        // 5. Set state = .idle
-        fatalError("Not yet implemented — implement for CG-011")
+        state = .pulling
+        do {
+            let (operations, newToken) = try await retryOnTransient {
+                try await self.transport.pull(since: self.lastSyncToken)
+            }
+            lastSyncToken = newToken
+            state = .idle
+            return operations
+        } catch {
+            state = .error(asSyncError(error))
+            throw error
+        }
     }
 
     /// Full sync cycle: push local, pull remote.
     /// Target: < 500ms for 100 operations (excluding network latency).
     public func sync(localUnsynced: [Operation]) async throws -> [Operation] {
-        // TODO: Implement for CG-011
-        // 1. Push unsynced
-        // 2. Pull remote
-        // 3. Return remote operations for local merge
-        fatalError("Not yet implemented — implement for CG-011")
+        try await push(operations: localUnsynced)
+        return try await pull()
+    }
+
+    // MARK: - Private
+
+    /// Retry a throwing async closure with exponential backoff on transient SyncErrors.
+    private func retryOnTransient<T>(
+        _ work: @Sendable () async throws -> T
+    ) async throws -> T {
+        var lastError: Error?
+        for attempt in 0..<Self.maxRetries {
+            do {
+                return try await work()
+            } catch let error as SyncError where error.isTransient {
+                lastError = error
+                let delayMs = UInt64(pow(2.0, Double(attempt))) * 100_000_000 // 100ms, 200ms, 400ms
+                try await Task.sleep(nanoseconds: delayMs)
+            }
+        }
+        throw lastError!
+    }
+
+    /// Map arbitrary errors to SyncError.
+    private func asSyncError(_ error: Error) -> SyncError {
+        if let syncError = error as? SyncError {
+            return syncError
+        }
+        return .serverError(error.localizedDescription)
+    }
+}
+
+// MARK: - SyncError Transient Classification
+
+extension SyncError {
+    /// Whether this error is transient and worth retrying.
+    var isTransient: Bool {
+        switch self {
+        case .networkUnavailable, .serverError:
+            return true
+        case .authenticationFailed, .quotaExceeded, .zoneNotFound:
+            return false
+        }
     }
 }
