@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostFileWrite": [
+      {
+        "command": "swift build 2>&1 | tail -20",
+        "description": "Auto-build after every file write"
+      }
+    ],
+    "PreCommit": [
+      {
+        "command": "bash .claude/hooks/pre-commit.sh",
+        "description": "Block commits on main, check for force unwraps"
+      }
+    ]
+  }
+}

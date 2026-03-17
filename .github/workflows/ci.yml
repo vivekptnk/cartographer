@@ -1,0 +1,86 @@
+name: Cartographer CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    name: Build, Harness & Test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.0.app
+
+      - name: Build
+        run: swift build 2>&1
+
+      - name: Check Build Warnings
+        run: |
+          WARNINGS=$(swift build 2>&1 | grep -i "warning:" || true)
+          if [ -n "$WARNINGS" ]; then
+            echo "❌ Build warnings found:"
+            echo "$WARNINGS"
+            exit 1
+          fi
+          echo "✅ No warnings"
+
+      - name: Run Harness Tests
+        run: swift test --filter HarnessTests -v 2>&1
+
+      - name: Run All Tests
+        run: swift test -v 2>&1
+
+      - name: Check for Force Unwraps
+        run: |
+          FOUND=$(grep -rn '!\.' Sources/ --include="*.swift" | grep -v '//' | grep -v 'test' || true)
+          if echo "$FOUND" | grep -qE '\w!\.'; then
+            echo "❌ Force unwraps in Sources/:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "✅ No force unwraps"
+
+      - name: Check for Unresolved Stubs
+        run: |
+          STUBS=$(grep -rn 'fatalError("Not yet implemented' Sources/ --include="*.swift" || true)
+          if [ -n "$STUBS" ]; then
+            echo "⚠️  Unresolved stubs:"
+            echo "$STUBS"
+          fi
+
+  benchmarks:
+    name: Benchmark Regression Check
+    runs-on: macos-14
+    if: github.event_name == 'pull_request'
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.0.app
+
+      - name: Run Benchmarks
+        run: swift test --filter Benchmark -v 2>&1 | tee benchmark-output.txt || true
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-output.txt
+
+  docs:
+    name: Documentation
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.0.app
+
+      - name: Generate DocC
+        run: swift package generate-documentation 2>&1 || true

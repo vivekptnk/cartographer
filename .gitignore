@@ -1,0 +1,26 @@
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.playground/
+DerivedData/
+build/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+Packages/
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Benchmark outputs
+benchmark-output.txt
