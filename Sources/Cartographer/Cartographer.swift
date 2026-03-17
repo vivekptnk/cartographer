@@ -2,6 +2,8 @@
 // Public entry point for the Cartographer library.
 // This file re-exports the key types that consumers interact with.
 
+import Foundation
+
 /// Cartographer: An offline-first collaborative map annotation engine.
 ///
 /// ## Quick Start
