@@ -1,35 +1,19 @@
-// MARK: - Cartographer
-// Public entry point for the Cartographer library.
-// This file re-exports the key types that consumers interact with.
+// MARK: - Cartographer module root
+//
+// Public entry point for the Cartographer library. Consumers import the
+// module (`import Cartographer`) and use the exported types directly:
+//
+//     import Cartographer
+//
+//     let clock = HLCClock(nodeID: UUID())
+//     let log   = OperationLog()
+//     let eng   = AnnotationEngine(clock: clock, operationLog: log)
+//
+// There is no module-level facade type by design. A root struct named
+// `Cartographer` would shadow the module namespace and block
+// `Cartographer.Annotation`-style qualification at call sites that have
+// `Annotation` colliding with `SwiftUI.Annotation` or similar. Wiring is the
+// app's job (see `CartographerDemo/AppContainer.swift` for the reference
+// composition).
 
 import Foundation
-
-/// Cartographer: An offline-first collaborative map annotation engine.
-///
-/// ## Quick Start
-/// ```swift
-/// // Create a project
-/// let cartographer = Cartographer(nodeID: UUID())
-///
-/// // Add an annotation
-/// let annotation = await cartographer.createAnnotation(
-///     type: .pin,
-///     coordinate: GeoCoordinate(latitude: 40.7128, longitude: -74.0060),
-///     title: "NYC Office",
-///     projectID: projectID
-/// )
-///
-/// // Query visible annotations
-/// let visible = cartographer.annotations(in: mapBoundingBox)
-///
-/// // Sync when online
-/// let remoteOps = try await cartographer.sync()
-/// ```
-public struct Cartographer: Sendable {
-    public let nodeID: EntityID
-    // Components will be wired here as they're implemented
-
-    public init(nodeID: EntityID = EntityID()) {
-        self.nodeID = nodeID
-    }
-}
