@@ -6,6 +6,14 @@ xcuserdata/
 DerivedData/
 build/
 
+# The CartographerDemo target is authoritative for xcodebuild and must be
+# checked in (see docs/adr/ADR-006-demo-app-structure.md). Carve out an
+# exception but keep user-specific data ignored.
+!CartographerDemo/CartographerDemo.xcodeproj/
+!CartographerDemo/CartographerDemo.xcodeproj/**
+CartographerDemo/CartographerDemo.xcodeproj/xcuserdata/
+CartographerDemo/CartographerDemo.xcodeproj/project.xcworkspace/xcuserdata/
+
 # Swift Package Manager
 .build/
 .swiftpm/

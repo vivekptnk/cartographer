@@ -55,6 +55,57 @@ swift test --filter SyncHarnessTests           # Sync convergence harness
 swift test --filter BenchmarkTests             # Performance benchmarks
 ```
 
+## CartographerDemo — iOS Reference App
+
+`CartographerDemo/` is the v0.2.0 reference app that exercises every engine component on a real iPhone. Use it to smoke-test an engine change end-to-end before merging to `main`.
+
+**Build from the command line:**
+
+```bash
+xcodebuild \
+  -project CartographerDemo/CartographerDemo.xcodeproj \
+  -scheme CartographerDemo \
+  -destination 'generic/platform=iOS' \
+  -configuration Debug \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+  build
+```
+
+**Run on a real iPhone (iOS 17+):**
+
+1. Open `CartographerDemo/CartographerDemo.xcodeproj` in Xcode 16+.
+2. Select your personal or team signing identity under *Signing & Capabilities* (bundle id: `com.garnathdynamics.cartographer.demo`).
+3. Pick the attached device as the run destination and hit Run. First launch requests location permission only if you enable user-location in the debug menu; by default the map is static.
+
+**Debug menu** (wrench icon, top-right):
+
+- Seed N synthetic annotations around San Francisco
+- Toggle CloudKit sync on/off (uses an in-memory round-trip transport so no iCloud account is required to demo the state machine)
+- Switch tile source between OpenStreetMap and OpenTopoMap
+- Trigger a region download (zoom 12–14 over the SF bay box)
+- Share GeoJSON of the current project via the system share sheet
+
+> **Demo-only surfaces.** The bottom-right status badge (annotation count + sync status) is a debug readout — it is *not* the production offline indicator pattern. The production nav-bar cached-only vs. live pattern lives in `docs/design/v0.2.0/04-offline-indicator.md` (CHA-139). Do not cargo-cult the badge into the production shell.
+
+**Before merging engine changes to `main`, run the demo with VoiceOver enabled** and verify tap-to-add-pin announces per `docs/design/v0.2.0/06-voiceover-tap-to-add-pin.md` (CHA-139). Accessibility is a first-class merge gate, not an afterthought.
+
+**Project structure:**
+
+- `CartographerDemo.xcodeproj` — committed, authoritative for `xcodebuild`
+- `project.yml` — XcodeGen mirror for diff-friendly structural review. Requires `brew install xcodegen` only if you want to regenerate the `.pbxproj` from scratch; day-to-day builds don't need it.
+
+See [`docs/adr/ADR-006-demo-app-structure.md`](docs/adr/ADR-006-demo-app-structure.md) for the full rationale behind the companion-Xcode-project approach.
+
+**Demo video:** _coming soon_ — placeholder for the v0.2.0 recorded walkthrough. Tracked in CHA-137.
+
+The recording doubles as a design-system smoke test. Capture these states:
+
+- Light + Dark appearance (Control Center toggle)
+- Dynamic Type at `AX3` on iPhone SE (3rd gen) — sheet must not truncate
+- Offline cached-only state (airplane mode over a pre-downloaded region)
+- VoiceOver tap-to-add-pin flow (per `docs/design/v0.2.0/06-voiceover-tap-to-add-pin.md`, CHA-139)
+- Cluster break-apart crossing zoom 12 (per `docs/design/v0.2.0/05-cluster-badge.md`, CHA-139)
+
 ## Performance Targets
 
 | Operation | Target |
@@ -73,7 +124,7 @@ Sources/Cartographer/
 ├── CRDT/           # HLC, LWW-Register, OR-Set, Operation, OperationLog
 ├── Spatial/        # R-tree, BoundingBox queries
 ├── TileEngine/     # Cache, MKTileOverlay, region downloader
-├── Annotations/    # Annotation engine, rendering, clustering
+├── Annotations/    # Annotation engine, SmartAnnotationService, clustering
 ├── Sync/           # CloudKit transport, sync state machine
 └── Export/         # GeoJSON, KML, PDF exporters
 
@@ -81,6 +132,11 @@ Tests/CartographerTests/
 ├── Harness/        # Source-of-truth behavioral contracts (DO NOT MODIFY)
 ├── Benchmarks/     # Performance regression tests
 └── */              # Additional unit tests per module
+
+CartographerDemo/
+├── CartographerDemo/            # SwiftUI iOS app sources
+├── CartographerDemo.xcodeproj/  # Checked in; authoritative for xcodebuild
+└── project.yml                  # XcodeGen mirror; diff-friendly spec
 ```
 
 ## Contributing
