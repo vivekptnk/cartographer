@@ -85,6 +85,10 @@ xcodebuild \
 - Trigger a region download (zoom 12–14 over the SF bay box)
 - Share GeoJSON of the current project via the system share sheet
 
+> **Demo-only surfaces.** The bottom-right status badge (annotation count + sync status) is a debug readout — it is *not* the production offline indicator pattern. The production nav-bar cached-only vs. live pattern lives in `docs/design/v0.2.0/04-offline-indicator.md` (CHA-139). Do not cargo-cult the badge into the production shell.
+
+**Before merging engine changes to `main`, run the demo with VoiceOver enabled** and verify tap-to-add-pin announces per `docs/design/v0.2.0/06-voiceover-tap-to-add-pin.md` (CHA-139). Accessibility is a first-class merge gate, not an afterthought.
+
 **Project structure:**
 
 - `CartographerDemo.xcodeproj` — committed, authoritative for `xcodebuild`
@@ -93,6 +97,14 @@ xcodebuild \
 See [`docs/adr/ADR-006-demo-app-structure.md`](docs/adr/ADR-006-demo-app-structure.md) for the full rationale behind the companion-Xcode-project approach.
 
 **Demo video:** _coming soon_ — placeholder for the v0.2.0 recorded walkthrough. Tracked in CHA-137.
+
+The recording doubles as a design-system smoke test. Capture these states:
+
+- Light + Dark appearance (Control Center toggle)
+- Dynamic Type at `AX3` on iPhone SE (3rd gen) — sheet must not truncate
+- Offline cached-only state (airplane mode over a pre-downloaded region)
+- VoiceOver tap-to-add-pin flow (per `docs/design/v0.2.0/06-voiceover-tap-to-add-pin.md`, CHA-139)
+- Cluster break-apart crossing zoom 12 (per `docs/design/v0.2.0/05-cluster-badge.md`, CHA-139)
 
 ## Performance Targets
 
