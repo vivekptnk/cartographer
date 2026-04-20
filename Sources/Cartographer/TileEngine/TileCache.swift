@@ -20,6 +20,7 @@ private final class SQLiteHandle: Sendable {
     nonisolated(unsafe) let updateAccessStmt: OpaquePointer?
     nonisolated(unsafe) let sizeStmt: OpaquePointer?
     nonisolated(unsafe) let countStmt: OpaquePointer?
+    nonisolated(unsafe) let lastUpdatedStmt: OpaquePointer?
 
     init(
         db: OpaquePointer?,
@@ -27,7 +28,8 @@ private final class SQLiteHandle: Sendable {
         putStmt: OpaquePointer?,
         updateAccessStmt: OpaquePointer?,
         sizeStmt: OpaquePointer?,
-        countStmt: OpaquePointer?
+        countStmt: OpaquePointer?,
+        lastUpdatedStmt: OpaquePointer?
     ) {
         self.db = db
         self.getStmt = getStmt
@@ -35,6 +37,7 @@ private final class SQLiteHandle: Sendable {
         self.updateAccessStmt = updateAccessStmt
         self.sizeStmt = sizeStmt
         self.countStmt = countStmt
+        self.lastUpdatedStmt = lastUpdatedStmt
     }
 
     deinit {
@@ -43,6 +46,7 @@ private final class SQLiteHandle: Sendable {
         sqlite3_finalize(updateAccessStmt)
         sqlite3_finalize(sizeStmt)
         sqlite3_finalize(countStmt)
+        sqlite3_finalize(lastUpdatedStmt)
         sqlite3_close(db)
     }
 }
@@ -67,7 +71,7 @@ public actor TileCache {
         // Open database
         var dbHandle: OpaquePointer?
         guard sqlite3_open(dbPath, &dbHandle) == SQLITE_OK else {
-            self.handle = SQLiteHandle(db: nil, getStmt: nil, putStmt: nil, updateAccessStmt: nil, sizeStmt: nil, countStmt: nil)
+            self.handle = SQLiteHandle(db: nil, getStmt: nil, putStmt: nil, updateAccessStmt: nil, sizeStmt: nil, countStmt: nil, lastUpdatedStmt: nil)
             return
         }
 
@@ -107,13 +111,17 @@ public actor TileCache {
         var cStmt: OpaquePointer?
         sqlite3_prepare_v2(dbHandle, "SELECT COUNT(*) FROM tiles", -1, &cStmt, nil)
 
+        var luStmt: OpaquePointer?
+        sqlite3_prepare_v2(dbHandle, "SELECT MAX(last_accessed) FROM tiles", -1, &luStmt, nil)
+
         self.handle = SQLiteHandle(
             db: dbHandle,
             getStmt: gStmt,
             putStmt: pStmt,
             updateAccessStmt: uStmt,
             sizeStmt: szStmt,
-            countStmt: cStmt
+            countStmt: cStmt,
+            lastUpdatedStmt: luStmt
         )
 
         // Load existing access order
@@ -220,6 +228,28 @@ public actor TileCache {
         sqlite3_reset(stmt)
         guard sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
         return Int(sqlite3_column_int64(stmt, 0))
+    }
+
+    /// Total bytes occupied by cached tile payloads. Int64-typed public
+    /// metadata accessor for UI consumers (e.g. offline-indicator popover).
+    /// Thin wrapper over `currentSize()`.
+    public func totalSize() async -> Int64 {
+        Int64(await currentSize())
+    }
+
+    /// Timestamp of the most recently accessed tile, or nil when the cache
+    /// is empty. Derived from `MAX(last_accessed)` on the tiles table.
+    public func lastUpdated() async -> Date? {
+        guard let stmt = handle.lastUpdatedStmt else { return nil }
+
+        sqlite3_reset(stmt)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+
+        // Empty table → MAX(...) returns NULL.
+        guard sqlite3_column_type(stmt, 0) != SQLITE_NULL else { return nil }
+
+        let ms = sqlite3_column_int64(stmt, 0)
+        return Date(timeIntervalSince1970: Double(ms) / 1000.0)
     }
 
     // MARK: - Private Helpers
