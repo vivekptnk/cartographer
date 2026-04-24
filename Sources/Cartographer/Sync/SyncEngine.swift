@@ -70,7 +70,7 @@ public actor SyncEngine {
     // MARK: - Private
 
     /// Retry a throwing async closure with exponential backoff on transient SyncErrors.
-    private func retryOnTransient<T>(
+    private func retryOnTransient<T: Sendable>(
         _ work: @Sendable () async throws -> T
     ) async throws -> T {
         var lastError: Error?
