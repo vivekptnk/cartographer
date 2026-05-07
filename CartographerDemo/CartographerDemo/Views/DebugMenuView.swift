@@ -42,11 +42,12 @@ struct DebugMenuView: View {
                     }
                     Button("Download current region (z 12–14)") {
                         Task {
-                            let box = BoundingBox(
-                                minLatitude: 37.70, maxLatitude: 37.82,
-                                minLongitude: -122.52, maxLongitude: -122.36
-                            )
-                            await container.downloadCurrentRegion(box, zoomRange: 12...14)
+                            if let region = container.mapStore.region {
+                                let box = MapCoordinator.boundingBox(for: region)
+                                await container.downloadCurrentRegion(box, zoomRange: 12...14)
+                            } else {
+                                container.lastActionMessage = "Wait for map to load..."
+                            }
                         }
                     }
                     if container.regionDownloadProgress > 0 && container.regionDownloadProgress < 1 {

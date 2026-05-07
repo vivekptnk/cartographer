@@ -1,27 +1,19 @@
 import SwiftUI
-import MapKit
 import Cartographer
 
 struct RootView: View {
     @EnvironmentObject private var container: AppContainer
-    @State private var visibleRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
-        span: MKCoordinateSpan(latitudeDelta: 0.3, longitudeDelta: 0.3)
-    )
     @State private var showDebugMenu = false
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
-                DemoMapView(
-                    annotations: container.annotations,
-                    tileSource: container.selectedTileSource.source,
-                    onLongPress: { coord in
-                        Task { await container.addPin(at: coord) }
-                    },
-                    visibleRegion: $visibleRegion
-                )
-                .ignoresSafeArea(edges: .bottom)
+                if let store = container.mapStore {
+                    Cartographer.MapView(store: store)
+                        .ignoresSafeArea(edges: .bottom)
+                } else {
+                    ProgressView("Bootstrapping engine...")
+                }
 
                 statusBadge
                     .padding(12)
