@@ -1,0 +1,75 @@
+name: Refresh screenshots
+
+# Regenerates the PNGs under docs/images/ that README.md embeds. Runs the same
+# scripts/capture-screenshots.sh a developer would run locally, then opens a PR
+# if the captures differ from what's checked in.
+#
+# Triggers:
+#   - workflow_dispatch: on-demand regeneration from the Actions tab.
+#   - weekly schedule: catches drift from new Xcode / iOS simulator releases.
+#   - push to main when demo code, engine source, or the capture script changes.
+#
+# Pattern mirrors vivekptnk/Iris's refresh-screenshots.yml — see CHA-174 / CHA-196.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 14 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - 'CartographerDemo/**'
+      - 'Sources/Cartographer/**'
+      - 'scripts/capture-screenshots.sh'
+      - '.github/workflows/refresh-screenshots.yml'
+
+concurrency:
+  group: refresh-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    name: Capture & PR
+    runs-on: macos-15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      - name: Boot iOS 18 iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available \
+            | awk '/-- iOS 18/{f=1;next} /^--/{f=0} f && /iPhone 16 \(/' \
+            | sed -E 's/.*\(([0-9A-Fa-f-]+)\).*/\1/' \
+            | head -n1)
+          if [[ -z "$UDID" ]]; then
+            echo "No iOS 18 iPhone 16 simulator available." >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          xcrun simctl boot "$UDID" || true
+          echo "CAPTURE_DEVICE_ID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Regenerate docs/images/
+        run: scripts/capture-screenshots.sh
+
+      - name: Open PR if screenshots changed
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore(docs): refresh screenshots"
+          title: "chore(docs): refresh screenshots"
+          body: |
+            Automated screenshot refresh from `scripts/capture-screenshots.sh`.
+
+            - Trigger: `${{ github.event_name }}`
+            - Source: `${{ github.sha }}`
+
+            Review the diff to confirm the renders still match what README claims.
+          branch: chore/refresh-screenshots
+          delete-branch: true
+          add-paths: |
+            docs/images/*.png
