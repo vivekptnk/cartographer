@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import MapKit
+import CoreLocation
 import Cartographer
 
 /// Single source of truth for every engine component the demo exercises.
@@ -14,7 +16,13 @@ final class AppContainer: ObservableObject {
     // MARK: - Published UI state
 
     @Published var annotations: [Cartographer.Annotation] = []
-    @Published var selectedTileSource: TileSourceChoice = .openStreetMap
+    @Published var selectedTileSource: TileSourceChoice = .openStreetMap {
+        didSet {
+            Task { @MainActor in
+                await updateTileSource()
+            }
+        }
+    }
     @Published var syncEnabled: Bool = false
     @Published var syncStatus: String = "disabled"
     @Published var regionDownloadProgress: Double = 0.0
@@ -36,6 +44,11 @@ final class AppContainer: ObservableObject {
     private(set) var exporter = GeoJSONExporter()
     private(set) var kmlExporter = KMLExporter()
 
+    // Real wired components from the Cartographer library
+    private(set) var tileOverlay: CachingTileOverlay!
+    private(set) var mapCoordinator: MapCoordinator!
+    @Published private(set) var mapStore: MapViewStore!
+
     private var hasBootstrapped = false
 
     // MARK: - Bootstrap
@@ -55,7 +68,32 @@ final class AppContainer: ObservableObject {
         self.syncTransport = InMemorySyncTransport()
         self.syncEngine = SyncEngine(transport: syncTransport, operationLog: operationLog)
 
+        // Wire the MapUI components
+        await updateTileSource(initial: true)
+
         await reloadAnnotations()
+    }
+
+    private func updateTileSource(initial: Bool = false) async {
+        let currentRegion = initial ? MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+            span: MKCoordinateSpan(latitudeDelta: 0.3, longitudeDelta: 0.3)
+        ) : mapStore.region
+        
+        self.tileOverlay = CachingTileOverlay(source: selectedTileSource.source, cache: tileCache)
+        self.mapCoordinator = MapCoordinator(
+            annotationEngine: annotationEngine,
+            tileOverlay: tileOverlay,
+            projectID: projectID
+        )
+        self.mapStore = MapViewStore(
+            coordinator: mapCoordinator,
+            initialRegion: currentRegion
+        )
+        
+        if !initial {
+            await reloadAnnotations()
+        }
     }
 
     // MARK: - Operations surfaced to views
@@ -65,6 +103,13 @@ final class AppContainer: ObservableObject {
             let current = try await operationLog.materializeProject(projectID: projectID)
             await annotationEngine.rebuildIndex(from: current)
             self.annotations = current
+            
+            // Push coordinates to the map store for clustering if needed
+            let coordMap = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0.coordinate) })
+            await mapCoordinator.refreshVisibleSet(
+                region: mapStore.region ?? MKCoordinateRegion(),
+                coordinateProvider: coordMap
+            )
         } catch {
             self.annotations = []
             self.lastActionMessage = "Failed to load annotations: \(error)"
@@ -144,40 +189,15 @@ final class AppContainer: ObservableObject {
     }
 
     /// Debug-menu helper: kick off a bounding-box region download.
-    ///
-    /// TODO(CHA-135): wire to `RegionDownloader` when that ticket merges. Until
-    /// then, walk the tile coordinates ourselves and drive the existing
-    /// `TileCache` so the demo can exercise the cache path end-to-end.
     func downloadCurrentRegion(_ box: BoundingBox, zoomRange: ClosedRange<Int> = 12...14) async {
         regionDownloadProgress = 0.0
-        let tileList = Self.tileCoordinates(in: box, zoomRange: zoomRange)
-        guard !tileList.isEmpty else {
-            regionDownloadProgress = 1.0
-            lastActionMessage = "Region download: nothing to do"
-            return
+        let downloader = RegionDownloader(cache: tileCache, source: selectedTileSource.source)
+        
+        for await progress in downloader.download(region: box, zoomRange: zoomRange) {
+            self.regionDownloadProgress = progress.fractionComplete
         }
-
-        let source = selectedTileSource.source
-        let session = URLSession(configuration: .default)
-        var completed = 0
-
-        for coord in tileList {
-            if await tileCache.get(coord) != nil {
-                completed += 1
-                regionDownloadProgress = Double(completed) / Double(tileList.count)
-                continue
-            }
-            let url = source.tileURL(for: coord)
-            do {
-                let (data, _) = try await session.data(from: url)
-                await tileCache.put(coord, data: data)
-            } catch {
-                // Keep going: one missing tile does not fail the whole download.
-            }
-            completed += 1
-            regionDownloadProgress = Double(completed) / Double(tileList.count)
-        }
-        lastActionMessage = "Region download complete (\(tileList.count) tiles)"
+        
+        lastActionMessage = "Region download complete"
     }
 
     /// Collect GeoJSON bytes for the current project to hand to the share sheet.
